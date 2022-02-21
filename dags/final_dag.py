@@ -30,60 +30,6 @@ def get_security_group_id(group_name, region_name):
     response = ec2.describe_security_groups(GroupNames=[group_name])
     return response['SecurityGroups'][0]['GroupId']
 
-def create_cluster(region_name, cluster_name='Vivek_Cluster' + str(datetime.now()), release_label='emr-6.2.1',master_instance_type='m5.xlarge', num_core_nodes=1, core_node_instance_type='m5.xlarge',**kwargs):
-    emr_master_security_group_id = get_security_group_id('emr-securitygroup', region_name=region_name)
-    emr_slave_security_group_id= emr_master_security_group_id
-    cluster_response = emr.run_job_flow(
-        Name=cluster_name,
-        ReleaseLabel=release_label,
-        Instances={
-            'InstanceGroups': [
-                {
-                    'Name': "Master nodes",
-                    'Market': 'ON_DEMAND',
-                    'InstanceRole': 'MASTER',
-                    'InstanceType': master_instance_type,
-                    'InstanceCount': 1,
-                },
-                {
-                    'Name': "Slave nodes",
-                    'Market': 'ON_DEMAND',
-                    'InstanceRole': 'CORE',
-                    'InstanceType': core_node_instance_type,
-                    'InstanceCount': num_core_nodes,
-                }
-            ],
-            'KeepJobFlowAliveWhenNoSteps': True,
-            'Ec2KeyName' : 'vivek_ec2_key',
-            'EmrManagedMasterSecurityGroup': emr_master_security_group_id,
-            'EmrManagedSlaveSecurityGroup': emr_slave_security_group_id
-        },
-        BootstrapActions= [
-            {
-                'Name': 'Install boto3',
-                'ScriptBootstrapAction': {
-                            'Path': 's3://landing-zone-vivek/Dependency/dependencies.sh',
-                        }
-            }
-			],
-		
-        AutoTerminationPolicy = {'IdleTimeout': 600},	
-        VisibleToAllUsers=True,
-        JobFlowRole= "ec2-admin",
-        ServiceRole= "emr_demo",
-        Applications=[
-            { 'Name': 'hadoop' },
-            { 'Name': 'spark' },
-            { 'Name': 'hive' },
-            { 'Name': 'livy' },
-            { 'Name': 'zeppelin' },
-            { 'Name': 'JupyterEnterpriseGateway'},
-            { 'Name': 'JupyterHub'},
-        ]
-    )
-    return cluster_response['JobFlowId']
-
-
 def get_cluster_dns(cluster_id):
     response = emr.describe_cluster(ClusterId=cluster_id)
     return response['Cluster']['MasterPublicDnsName']
@@ -100,12 +46,7 @@ def livy_task(master_dns,emr_spark_job,dataset,spark_config,dataset_path):
     logging.info(response.json())
     return response.json()
     
-def terminate_cluster(**kwargs):
-    ti = kwargs['ti']
-    cluster_id = ti.xcom_pull(task_ids='create_cluster')
-    emr.terminate_job_flows(JobFlowIds=[cluster_id])
-    
-    
+
 default_args = {
     'owner': 'airflow',
     'depends_on_past': False,
@@ -168,7 +109,7 @@ def pre_validation(dataset_path,dataset,**kwargs):
     
     Actives_schema = {'advertising_id':str,'city':str,'location_category':str,'location_granularities':str,'location_source':np.ndarray,'state':str,
                     'timestamp':np.int64,'user_id':str,'user_latitude':np.float64,'user_longitude':np.float64,'month':str,'date':date}
-    Viewership_schema = {'advertising_id':str,'channel_genre':str,'channel_name':str,'city':str,'device':str,'device_type':str,'duration':int,'grid_id':str,
+    Viewership_schema = {'advertising_id':str,'channel_genre':str,'channel_name':str,'city':str,'device':str,'device_type':str,'duration':np.int32,'grid_id':str,
                         'language':str,'location_category':str,'location_granularities':str,'location_source':np.ndarray,'record_timestamp':np.int64,
                         'show_genre':str,'show_name':str,'state':str,'user_lat':np.float64,'user_long':np.float64,'month':str,'date':date}
                         
@@ -184,10 +125,60 @@ def pre_validation(dataset_path,dataset,**kwargs):
             print("datatype not matched")
             return TypeError("datatype ", str(raw_columnname))
             
-            
-def create_emr(**kwargs):
-    cluster_id = create_cluster(region_name='us-east-1', cluster_name='Vivek_Cluster',  num_core_nodes=1)
-    return cluster_id
+
+def create_cluster(region_name, cluster_name='Vivek_Cluster' + str(datetime.now()), release_label='emr-6.2.1',master_instance_type='m5.xlarge', num_core_nodes=1, core_node_instance_type='m5.xlarge',**kwargs):
+    emr_master_security_group_id = get_security_group_id('emr-securitygroup', region_name=region_name)
+    emr_slave_security_group_id= emr_master_security_group_id
+    cluster_response = emr.run_job_flow(
+        Name=cluster_name,
+        ReleaseLabel=release_label,
+        Instances={
+            'InstanceGroups': [
+                {
+                    'Name': "Master nodes",
+                    'Market': 'ON_DEMAND',
+                    'InstanceRole': 'MASTER',
+                    'InstanceType': master_instance_type,
+                    'InstanceCount': 1,
+                },
+                {
+                    'Name': "Slave nodes",
+                    'Market': 'ON_DEMAND',
+                    'InstanceRole': 'CORE',
+                    'InstanceType': core_node_instance_type,
+                    'InstanceCount': num_core_nodes,
+                }
+            ],
+            'KeepJobFlowAliveWhenNoSteps': True,
+            'Ec2KeyName' : 'vivek_ec2_key',
+            'EmrManagedMasterSecurityGroup': emr_master_security_group_id,
+            'EmrManagedSlaveSecurityGroup': emr_slave_security_group_id
+        },
+        BootstrapActions= [
+            {
+                'Name': 'Install boto3',
+                'ScriptBootstrapAction': {
+                            'Path': 's3://landing-zone-vivek/Dependency/dependencies.sh',
+                        }
+            }
+			],
+		
+        AutoTerminationPolicy = {'IdleTimeout': 600},	
+        VisibleToAllUsers=True,
+        JobFlowRole= "ec2-admin",
+        ServiceRole= "emr_demo",
+        Applications=[
+            { 'Name': 'hadoop' },
+            { 'Name': 'spark' },
+            { 'Name': 'hive' },
+            { 'Name': 'livy' },
+            { 'Name': 'zeppelin' },
+            { 'Name': 'JupyterEnterpriseGateway'},
+            { 'Name': 'JupyterHub'},
+        ]
+    )
+    return cluster_response['JobFlowId']
+    
     
 def wait_for_completion(**kwargs):
     ti = kwargs['ti']
@@ -203,10 +194,12 @@ def transformation(emr_spark_job,dataset,spark_config,dataset_path,**kwargs):
     statement_response = livy_task(cluster_dns,emr_spark_job,dataset,spark_config,dataset_path)
     return statement_response
     
-def terminate_emr(**kwargs):
+
+def terminate_cluster(**kwargs):
     ti = kwargs['ti']
     cluster_id = ti.xcom_pull(task_ids='create_cluster')
-    terminate_cluster(cluster_id)
+    emr.terminate_job_flows(JobFlowIds=[cluster_id])
+
     
 def post_validation(dataset_path,dataset,**kwargs):
     ti=kwargs['ti']
@@ -221,18 +214,7 @@ def post_validation(dataset_path,dataset,**kwargs):
  
     raw_path = 's3://' + data['raw-bucket'] + '/' + dataset_path
     staging_path =  data['mask-'+ dataset]['destination']['data-location'] + 'month=' + month + '/' + 'date=' + str(today) 
-    """
-    while not os.path.exists(staging_path):
-        time.sleep(1)
-    if os.path.isfile(staging_path):
     
-    
-    #wait_for_s3_object(path)
-    waiter= s3.get_waiter('object_exists')
-    waiter.wait(Bucket=data['staging-bucket'], Key = path,
-                  WaiterConfig={
-                     'Delay': 2})
-    """
     path = ('/').join(staging_path.split('/')[1:])
     while not S3Path(path).exists():
         time.sleep(1)
@@ -281,7 +263,9 @@ def post_validation(dataset_path,dataset,**kwargs):
         else:
             print("datatype not matched")
             return TypeError("datatype ", str(staging_columnname)) 
-    
+
+
+
 read_config=PythonOperator(
     task_id='read_config',
     python_callable=read_config,
