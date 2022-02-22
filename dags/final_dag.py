@@ -63,7 +63,7 @@ default_args = {
 
 # Initialize the DAG
 # Concurrency --> Number of tasks allowed to run concurrently
-dag = DAG('AWS_Transformation', concurrency=3, schedule_interval=None, default_args=default_args, max_Active_runs=1)
+dag = DAG('AWS_Transformation', concurrency=3, schedule_interval=None, default_args=default_args, max_active_runs=1)
 
 client(region_name='us-east-1')
 
