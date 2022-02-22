@@ -23,16 +23,16 @@ spark.sparkContext.addPyFile("/usr/lib/spark/jars/delta-core_2.12-0.8.0.jar")
 from delta import *
 
 class Configuration:
-    def __init__(self,spark_config_loc,dataset):
+    def __init__(self,spark_config_loc,dataset,landing_bucket):
 
         self.s3 = boto3.resource('s3')
         self.datasetname = dataset
 
         #set spark configuration
-        self.setSparkConfig(spark_config_loc)
+        self.setSparkConfig(spark_config_loc,landing_bucket)
 
         # Extracting information from app_config file
-        self.conf = self.fetchConfig()
+        self.conf = self.fetchConfig(landing_bucket)
 
         self.raw_bucket = self.conf["raw-bucket"]
         self.staging_bucket = self.conf["staging-bucket"]
@@ -58,9 +58,9 @@ class Configuration:
         
     
     # Sets spark configs from location fetched from livy call
-    def setSparkConfig(self,location):
+    def setSparkConfig(self,location,landing_bucket):
   
-        obj = self.s3.Object('landing-zone-vivek', location)
+        obj = self.s3.Object(landing_bucket, location)
         body = obj.get()['Body'].read()
         json_raw = json.loads(body)
         spark_properties = json_raw['Properties']
@@ -72,9 +72,9 @@ class Configuration:
         conf = spark._jsc.hadoopConfiguration().set('mapreduce.fileoutputcommitter.marksuccessfuljobs', 'false')
 
     # fetchConfig is used to get app_config file from s3 bucket   
-    def fetchConfig(self):
+    def fetchConfig(self,landing_bucket):
         path = spark.sparkContext._conf.get('spark.path')
-        obj = self.s3.Object('landing-zone-vivek', path)
+        obj = self.s3.Object(landing_bucket, path)
         body = obj.get()['Body'].read()
         confData = json.loads(body)
         
@@ -176,9 +176,10 @@ if __name__=='__main__':
     dataset_to_be_processed = sys.argv[1]
     spark_config_loc = sys.argv[2]
     dataset_file = sys.argv[3]
+    landing_bucket = sys.argv[4]
     
     transform_obj = TransformData()
-    conf_obj = Configuration(spark_config_loc,dataset_to_be_processed)
+    conf_obj = Configuration(spark_config_loc,dataset_to_be_processed,landing_bucket)
 
     # Loading dataset from Raw Zone for processing
     raw_zone_path = "s3://"+conf_obj.raw_bucket+"/"+dataset_file
