@@ -20,6 +20,7 @@ dataset_to_be_processed = "{{dag_run.conf['dataset_to_be_processed']}}"
 dataset_path = "{{dag_run.conf['dataset_path']}}"
 spark_config = "{{dag_run.conf['spark_config']}}"
 app_config = "{{dag_run.conf['app_config']}}"
+landing_bucket = "{{dag_run.conf['landing_bucket']}}"
 
 def client(region_name):
     global emr
@@ -38,9 +39,9 @@ def get_cluster_dns(cluster_id):
 def wait_for_cluster_creation(cluster_id):
     emr.get_waiter('cluster_running').wait(ClusterId=cluster_id)
 
-def livy_task(master_dns,emr_spark_job,dataset,spark_config,dataset_path):
+def livy_task(master_dns,emr_spark_job,dataset,spark_config,dataset_path,landing_bucket):
     host = 'http://' + master_dns + ':8998'
-    data = {"file":emr_spark_job, "className":"com.example.SparkApp","args":[dataset,spark_config,dataset_path]}
+    data = {"file":emr_spark_job, "className":"com.example.SparkApp","args":[dataset,spark_config,dataset_path,landing_bucket]}
     headers = {'Content-Type': 'application/json'}
     response =requests.post(host+ '/batches', data=json.dumps(data), headers=headers)
     logging.info(response.json())
@@ -68,8 +69,8 @@ client(region_name='us-east-1')
 
 s3 = boto3.resource('s3')
 
-def read_config(app_config):
-    response = s3.Object('landing-zone-vivek',app_config)
+def read_config(app_config,landing_bucket):
+    response = s3.Object(landing_bucket,app_config)
     data=response.get()['Body'].read().decode('utf-8')
     appdata=json.loads(data)
     return appdata
@@ -171,10 +172,7 @@ def create_cluster(region_name, cluster_name='Vivek_Cluster' + str(datetime.now(
             { 'Name': 'hadoop' },
             { 'Name': 'spark' },
             { 'Name': 'hive' },
-            { 'Name': 'livy' },
-            { 'Name': 'zeppelin' },
-            { 'Name': 'JupyterEnterpriseGateway'},
-            { 'Name': 'JupyterHub'},
+            { 'Name': 'livy' }
         ]
     )
     return cluster_response['JobFlowId']
@@ -185,13 +183,13 @@ def wait_for_completion(**kwargs):
     cluster_id = ti.xcom_pull(task_ids='create_cluster')
     wait_for_cluster_creation(cluster_id)
     
-def transformation(emr_spark_job,dataset,spark_config,dataset_path,**kwargs):
+def transformation(emr_spark_job,dataset,spark_config,dataset_path,landing_bucket,**kwargs):
     # ti is the Task Instance
     ti = kwargs['ti']
     cluster_id = ti.xcom_pull(task_ids='create_cluster')
     wait_for_cluster_creation(cluster_id)
     cluster_dns = get_cluster_dns(cluster_id)
-    statement_response = livy_task(cluster_dns,emr_spark_job,dataset,spark_config,dataset_path)
+    statement_response = livy_task(cluster_dns,emr_spark_job,dataset,spark_config,dataset_path,landing_bucket)
     return statement_response
     
 
@@ -269,7 +267,7 @@ def post_validation(dataset_path,dataset,**kwargs):
 read_config=PythonOperator(
     task_id='read_config',
     python_callable=read_config,
-    op_kwargs={'app_config': app_config},
+    op_kwargs={'app_config': app_config,'landing_bucket':landing_bucket},
     dag=dag)
     
 copy_data=PythonOperator(
@@ -299,7 +297,7 @@ wait_for_cluster_completion = PythonOperator(
 transformation = PythonOperator(
     task_id='transformation',
     python_callable=transformation,
-    op_kwargs={'emr_spark_job':emr_spark_job, 'dataset':dataset_to_be_processed, 'spark_config':spark_config,'dataset_path':dataset_path},
+    op_kwargs={'emr_spark_job':emr_spark_job, 'dataset':dataset_to_be_processed, 'spark_config':spark_config,'dataset_path':dataset_path,'landing_bucket':landing_bucket},
     dag=dag)
 
 terminate_cluster = PythonOperator(
